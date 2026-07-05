@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibeStudio AI — One-click AI</title>
+    <meta name="description" content="Universal application for text, image, and video generation with support for multiple models powered by Pollinations.ai.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🌸</span>
+                    <h1 class="logo-text">VibeStudio<span>AI</span></h1>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <button class="nav-item active" id="tab-chat" onclick="switchTab('chat')">
+                    <span class="nav-icon">💬</span>
+                    <span class="nav-label">AI Chat</span>
+                </button>
+                <button class="nav-item" id="tab-image" onclick="switchTab('image')">
+                    <span class="nav-icon">🎨</span>
+                    <span class="nav-label">Image Generator</span>
+                </button>
+                <button class="nav-item" id="tab-video" onclick="switchTab('video')">
+                    <span class="nav-icon">🎬</span>
+                    <span class="nav-label">Video Generator</span>
+                </button>
+                <button class="nav-item" id="tab-audio" onclick="switchTab('audio')">
+                    <span class="nav-icon">🔊</span>
+                    <span class="nav-label">Audio Generator</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="status-card">
+                    <div class="status-indicator">
+                        <span class="status-dot online" id="status-dot"></span>
+                        <span class="status-text" id="status-text">Proxy server active</span>
+                    </div>
+                    <div class="key-indicator">
+                        <span class="key-label">Auth Key:</span>
+                        <span class="key-value" id="key-value">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- 1. CHAT SECTION -->
+            <section class="content-tab active" id="content-chat">
+                <header class="content-header">
+                    <div class="header-info">
+                        <h2>Interactive AI Chat</h2>
+                        <p>Choose any text model and start a dialogue</p>
+                    </div>
+                    <div class="header-actions">
+                        <div class="select-wrapper">
+                            <select id="chat-model-select" class="model-select">
+                                <option value="openai">Loading models...</option>
+                            </select>
+                        </div>
+                        <div class="model-price-badge" id="chat-price-info"></div>
+                        <button class="btn btn-secondary" onclick="clearChat()">
+                            <span>🗑️</span> Clear Chat
+                        </button>
+                    </div>
+                </header>
+
+                <div class="chat-container">
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="message system-message">
+                            <div class="message-content">
+                                <p>👋 Hello! I am your AI assistant in the VibeStudio sandbox. Ask me any question or ask me to write code. You can choose a model in the top right corner.</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-wrapper">
+                        <textarea id="chat-input" placeholder="Write an AI message... (Ctrl + Enter to send)" rows="1"></textarea>
+                        <button class="btn btn-primary btn-send" id="btn-send-chat" onclick="sendChatMessage()">
+                            <span>➡️</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. IMAGE SECTION -->
+            <section class="content-tab" id="content-image">
+                <header class="content-header">
+                    <div class="header-info">
+                        <h2>Image Generator</h2>
+                        <p>Turn words into detailed and high-quality art</p>
+                    </div>
+                </header>
+
+                <div class="generation-layout">
+                    <!-- Settings Column -->
+                    <div class="settings-panel card">
+                        <h3 class="panel-title">Generation Settings</h3>
+                        
+                        <div class="form-group">
+                            <label for="img-prompt">Text prompt</label>
+                            <textarea id="img-prompt" class="prompt-input" placeholder="Describe what you want to see in the image..."></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="img-model-select">Model</label>
+                                <select id="img-model-select" class="control-select">
+                                    <option value="flux">Loading...</option>
+                                </select>
+                                <div class="model-price-badge" id="img-price-info"></div>
+                            </div>
+                            <div class="form-group">
+                                <label for="img-seed">Seed</label>
+                                <input type="number" id="img-seed" value="0" min="-1" class="control-input">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="img-width">Width (px)</label>
+                                <input type="number" id="img-width" value="1024" step="64" min="256" max="2048" class="control-input">
+                            </div>
+                            <div class="form-group">
+                                <label for="img-height">Height (px)</label>
+                                <input type="number" id="img-height" value="1024" step="64" min="256" max="2048" class="control-input">
+                            </div>
+                        </div>
+
+                        <div class="form-group inline-group">
+                            <label for="img-safe" class="checkbox-label">
+                                <input type="checkbox" id="img-safe" checked>
+                                Safe Filter (Safe NSFW)
+                            </label>
+                        </div>
+
+                        <div class="action-buttons">
+                            <button class="btn btn-primary w-full" id="btn-gen-image" onclick="generateImage()">
+                                🎨 Generate
+                            </button>
+                            <div class="btn-row">
+                                <button class="btn btn-secondary flex-1" id="btn-regen-image" onclick="regenerateImage()" disabled>
+                                    🔄 Regenerate
+                                </button>
+                                <button class="btn btn-secondary" id="btn-download-image" onclick="downloadImage()" title="Download Image" disabled>
+                                    💾
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Preview Panel -->
+                    <div class="preview-panel card">
+                        <div class="preview-placeholder" id="image-placeholder">
+                            <span class="placeholder-icon">🎨</span>
+                            <p>Set the settings on the left and click "Generate"</p>
+                        </div>
+                        <div class="preview-display hidden" id="image-display-container">
+                            <img src="" alt="Generated image" id="image-display">
+                        </div>
+                        <div class="loading-overlay hidden" id="image-loader">
+                            <div class="spinner"></div>
+                            <p id="image-loader-text">Connecting to GPU cluster...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. VIDEO SECTION -->
+            <section class="content-tab" id="content-video">
+                <header class="content-header">
+                    <div class="header-info">
+                        <h2>Video Generator</h2>
+                        <p>Bring scenes to life and create short video clips</p>
+                    </div>
+                </header>
+
+                <div class="generation-layout">
+                    <!-- Settings Column -->
+                    <div class="settings-panel card">
+                        <h3 class="panel-title">Generation Settings</h3>
+                        
+                        <div class="form-group">
+                            <label for="vid-prompt">Text prompt</label>
+                            <textarea id="vid-prompt" class="prompt-input" placeholder="Describe the movement, camera, or scene for the video..."></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="vid-model-select">Video Model</label>
+                                <select id="vid-model-select" class="control-select">
+                                    <option value="veo">Loading...</option>
+                                </select>
+                                <div class="model-price-badge" id="vid-price-info"></div>
+                            </div>
+                            <div class="form-group">
+                                <label for="vid-seed">Seed</label>
+                                <input type="number" id="vid-seed" value="0" min="-1" class="control-input">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="vid-duration">Duration (sec)</label>
+                                <select id="vid-duration" class="control-select">
+                                    <option value="4">4 seconds</option>
+                                    <option value="5">5 seconds</option>
+                                    <option value="8">8 seconds</option>
+                                    <option value="10">10 seconds</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="vid-aspect">Aspect Ratio</label>
+                                <select id="vid-aspect" class="control-select">
+                                    <option value="16:9">Landscape (16:9)</option>
+                                    <option value="9:16">Portrait (9:16)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="action-buttons">
+                            <button class="btn btn-primary w-full" id="btn-gen-video" onclick="generateVideo()">
+                                🎬 Create Video
+                            </button>
+                            <div class="btn-row">
+                                <button class="btn btn-secondary flex-1" id="btn-regen-video" onclick="regenerateVideo()" disabled>
+                                    🔄 Regenerate
+                                </button>
+                                <button class="btn btn-secondary" id="btn-download-video" onclick="downloadVideo()" title="Download Video" disabled>
+                                    💾
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Preview Panel -->
+                    <div class="preview-panel card">
+                        <div class="preview-placeholder" id="video-placeholder">
+                            <span class="placeholder-icon">🎬</span>
+                            <p>Set the settings on the left and click "Create Video"</p>
+                        </div>
+                        <div class="preview-display hidden" id="video-display-container">
+                            <video id="video-display" controls autoplay loop playsinline></video>
+                        </div>
+                        <div class="loading-overlay hidden" id="video-loader">
+                            <div class="spinner"></div>
+                            <p id="video-loader-text">Initializing video render. Video generation takes more time...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. AUDIO SECTION -->
+            <section class="content-tab" id="content-audio">
+                <header class="content-header">
+                    <div class="header-info">
+                        <h2>Audio and Music Generator</h2>
+                        <p>Voice text or create full melodies</p>
+                    </div>
+                </header>
+
+                <div class="generation-layout">
+                    <!-- Settings Column -->
+                    <div class="settings-panel card">
+                        <h3 class="panel-title">Generation Settings</h3>
+                        
+                        <div class="form-group">
+                            <label for="aud-type">Generation Type</label>
+                            <select id="aud-type" class="control-select" onchange="toggleAudioFields()">
+                                <option value="tts">Text-to-Speech (TTS)</option>
+                                <option value="music">Music Generation</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="aud-prompt">Text or Music Prompt</label>
+                            <textarea id="aud-prompt" class="prompt-input" placeholder="Enter text for voiceover..."></textarea>
+                        </div>
+
+                        <!-- TTS Settings Block -->
+                        <div id="aud-tts-settings">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="aud-model-select">TTS Model</label>
+                                    <select id="aud-model-select" class="control-select">
+                                        <option value="elevenlabs">Loading...</option>
+                                    </select>
+                                    <div class="model-price-badge" id="aud-price-info"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="aud-voice-select">Voice</label>
+                                    <select id="aud-voice-select" class="control-select">
+                                        <option value="alloy">alloy</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Music Settings Block -->
+                        <div id="aud-music-settings" class="hidden">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="aud-music-model-select">Music Model</label>
+                                    <select id="aud-music-model-select" class="control-select">
+                                        <option value="elevenmusic">ElevenLabs Music</option>
+                                        <option value="stable-audio-2.5">Stable Audio 2.5</option>
+                                    </select>
+                                    <div class="model-price-badge" id="aud-music-price-info"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="aud-music-duration">Duration (sec)</label>
+                                    <input type="number" id="aud-music-duration" value="10" min="3" max="300" class="control-input">
+                                </div>
+                            </div>
+                            <div class="form-group inline-group" style="margin-top: 10px;">
+                                <label for="aud-music-instrumental" class="checkbox-label">
+                                    <input type="checkbox" id="aud-music-instrumental" checked>
+                                    Instrumental only (no vocals)
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="action-buttons">
+                            <button class="btn btn-primary w-full" id="btn-gen-audio" onclick="generateAudio()">
+                                🔊 Generate Audio
+                            </button>
+                            <div class="btn-row">
+                                <button class="btn btn-secondary flex-1" id="btn-download-audio" onclick="downloadAudio()" title="Download Audio" disabled>
+                                    💾 Download File
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Preview Panel -->
+                    <div class="preview-panel card">
+                        <div class="preview-placeholder" id="audio-placeholder">
+                            <span class="placeholder-icon">🔊</span>
+                            <p>Set the settings on the left and click "Generate Audio"</p>
+                        </div>
+                        <div class="preview-display hidden" id="audio-display-container">
+                            <audio id="audio-display" controls autoplay style="width: 100%; max-width: 500px;"></audio>
+                        </div>
+                        <div class="loading-overlay hidden" id="audio-loader">
+                            <div class="spinner"></div>
+                            <p id="audio-loader-text">Speech synthesis or track generation...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

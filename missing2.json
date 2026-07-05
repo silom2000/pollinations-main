@@ -1,0 +1,22 @@
+[
+  "vibestudio/public/app.js:373 : console.error('Error чата:', err);",
+  "vibestudio/server.js:98 : res.end(JSON.stringify({ error: 'Failed to get models картинок', details: err.message }));",
+  "vibestudio/server.js:138 : res.end(JSON.stringify({ error: 'Error чата', details: err.message }));",
+  "vibestudio/server.js:178 : res.end(JSON.stringify({ error: 'Error генерации картинки', details: err.message }));",
+  "vibestudio/server.js:216 : res.end(JSON.stringify({ error: 'Error генерации видео', details: err.message }));",
+  "vibestudio/server.js:276 : res.end(JSON.stringify({ error: 'Error генерации аудио', details: err.message }));",
+  "sandbox.js:4 : // 1. Ручная загрузка .env файла, чтобы не ставить лишних зависимостей (dotenv)",
+  "sandbox.js:23 : console.error(\"❌ Error: Переменная POLLINATIONS_API_KEY не найдена в файле .env!\");",
+  "sandbox.js:24 : console.log(\"Пожалуйста, убедитесь, что в файле .env есть строка: POLLINATIONS_API_KEY=ваш_ключ\");",
+  "sandbox.js:33 : // --- Тест генерации текста ---",
+  "sandbox.js:34 : const textPrompt = \"Напиши короткий, мотивирующий и забавный совет для начинающего программиста-вайбкодера, который только начинает свой путь.\";",
+  "sandbox.js:35 : console.log(`💬 1. Отправляем запрос текстовой модели (openai)...`);",
+  "sandbox.js:57 : console.log(\"🤖 Ответ модели:\");",
+  "sandbox.js:63 : console.error(\"❌ Error при генерации текста:\", error.message);",
+  "sandbox.js:66 : // --- Тест генерации изображения ---",
+  "sandbox.js:68 : console.log(`🎨 2. Генерируем картинку (модель: flux)...`);",
+  "sandbox.js:90 : console.log(`✅ Изображение успешно создано!`);",
+  "sandbox.js:91 : console.log(`💾 Сохранено в: ${outputPath}\\n`);",
+  "sandbox.js:94 : console.error(\"❌ Error при генерации изображения:\", error.message);",
+  "sandbox.js:98 : console.log(\"🎉 Работа скрипта завершена!\");"
+]
