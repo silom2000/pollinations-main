@@ -12,6 +12,7 @@ let activeTab = 'chat';
 let lastGeneratedImageBlobUrl = null;
 let lastGeneratedVideoBlobUrl = null;
 let lastGeneratedAudioBlobUrl = null;
+let lastGeneratedAudioType = 'audio/mpeg';
 
 // Reference image state for Video Generator
 let videoRefFile = null;
@@ -923,7 +924,7 @@ function downloadVideo() {
 
 // --- AUDIO GENERATION ---
 
-// Populate TTS models dropdown
+// Populate TTS and Music models dropdowns
 function populateAudioModels() {
     const select = document.getElementById('aud-model-select');
     select.innerHTML = '';
@@ -940,11 +941,36 @@ function populateAudioModels() {
         const paid = model.paid_only ? ' (Premium)' : '';
         option.textContent = `${hInfo.icon} ${brand}${model.title || model.name}${paid}`;
 
-        if (model.name === 'elevenlabs' || model.name === 'elevenflash') {
+        if (model.name === 'elevenlabs' || model.name === 'elevenflash' || model.name === 'google/gemini-3.8-flash-lite-tts') {
             option.selected = true;
         }
         select.appendChild(option);
     });
+
+    // Populate Music / Audio generation models dropdown
+    const musicSelect = document.getElementById('aud-music-model-select');
+    if (musicSelect) {
+        const currentMusicVal = musicSelect.value;
+        const musicModels = sortModelsByHealth(audioModels.filter(m =>
+            (!m.voices || m.voices.length === 0) &&
+            m.output_modalities && m.output_modalities.includes('audio') &&
+            m.input_modalities && m.input_modalities.includes('text')
+        ));
+        if (musicModels.length > 0) {
+            musicSelect.innerHTML = '';
+            musicModels.forEach((model, index) => {
+                const option = document.createElement('option');
+                option.value = model.name;
+                const hInfo = getModelHealthInfo(model);
+                const paid = model.paid_only ? ' (Premium)' : '';
+                option.textContent = `${hInfo.icon} ${model.title || model.name}${paid}`;
+                if (model.name === currentMusicVal || (!currentMusicVal && (model.name.includes('music-v2.5') || index === 0))) {
+                    option.selected = true;
+                }
+                musicSelect.appendChild(option);
+            });
+        }
+    }
 }
 
 // Switch fields depending on type (TTS or Music)
@@ -1095,26 +1121,27 @@ async function generateAudio() {
             let errMsg = `Error (${response.status})`;
             try {
                 const errData = await response.json();
-                errMsg = errData.details || errData.error || errMsg;
+                errMsg = errData.error?.message || errData.message || errData.details || (typeof errData.error === 'string' ? errData.error : null) || errMsg;
             } catch (e) {}
             throw new Error(errMsg);
         }
-        
+
         const blob = await response.blob();
-        
+        lastGeneratedAudioType = blob.type || 'audio/mpeg';
+
         if (lastGeneratedAudioBlobUrl) {
             URL.revokeObjectURL(lastGeneratedAudioBlobUrl);
         }
-        
+
         lastGeneratedAudioBlobUrl = URL.createObjectURL(blob);
-        
+
         displayAud.src = lastGeneratedAudioBlobUrl;
-        
+
         loader.classList.add('hidden');
         displayContainer.classList.remove('hidden');
-        
+
         document.getElementById('btn-download-audio').disabled = false;
-        
+
     } catch (err) {
         console.error(err);
         loader.classList.add('hidden');
@@ -1130,9 +1157,18 @@ function downloadAudio() {
     if (!lastGeneratedAudioBlobUrl) return;
     const a = document.createElement('a');
     a.href = lastGeneratedAudioBlobUrl;
-    
+
+    let ext = '.mp3';
+    if (lastGeneratedAudioType.includes('wav')) {
+        ext = '.wav';
+    } else if (lastGeneratedAudioType.includes('ogg')) {
+        ext = '.ogg';
+    } else if (lastGeneratedAudioType.includes('aac')) {
+        ext = '.aac';
+    }
+
     const prompt = document.getElementById('aud-prompt').value.trim().slice(0, 30).replace(/[^a-zA-Z0-9]/g, '_');
-    a.download = `VibeStudio_${prompt || 'audio'}.mp3`;
+    a.download = `VibeStudio_${prompt || 'audio'}${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

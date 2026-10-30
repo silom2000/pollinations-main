@@ -164,7 +164,12 @@ const server = http.createServer(async (req, res) => {
       }
 
       const apiRes = await fetch(targetUrl, { headers });
-      if (!apiRes.ok) throw new Error(`HTTP ${apiRes.status} ${apiRes.statusText}`);
+      if (!apiRes.ok) {
+        const errorText = await apiRes.text();
+        res.writeHead(apiRes.status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(errorText);
+        return;
+      }
 
       res.writeHead(200, {
         'Content-Type': apiRes.headers.get('content-type') || 'image/jpeg',
@@ -211,7 +216,12 @@ const server = http.createServer(async (req, res) => {
       }
 
       const apiRes = await fetch(targetUrl, { headers });
-      if (!apiRes.ok) throw new Error(`HTTP ${apiRes.status} ${apiRes.statusText}`);
+      if (!apiRes.ok) {
+        const errorText = await apiRes.text();
+        res.writeHead(apiRes.status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(errorText);
+        return;
+      }
 
       res.writeHead(200, {
         'Content-Type': apiRes.headers.get('content-type') || 'video/mp4'
@@ -289,12 +299,13 @@ const server = http.createServer(async (req, res) => {
     const voice = parsedUrl.searchParams.get('voice') || 'alloy';
     const duration = parsedUrl.searchParams.get('duration') || '';
     const instrumental = parsedUrl.searchParams.get('instrumental') || 'false';
+    const responseFormat = parsedUrl.searchParams.get('response_format') || '';
 
     const queryParams = new URLSearchParams({
-      model,
-      voice,
-      response_format: 'mp3'
+      model
     });
+    if (voice) queryParams.set('voice', voice);
+    if (responseFormat) queryParams.set('response_format', responseFormat);
     if (duration) queryParams.set('duration', duration);
     if (instrumental === 'true') queryParams.set('instrumental', 'true');
 
@@ -308,7 +319,13 @@ const server = http.createServer(async (req, res) => {
       }
 
       const apiRes = await fetch(targetUrl, { headers });
-      if (!apiRes.ok) throw new Error(`HTTP ${apiRes.status} ${apiRes.statusText}`);
+      if (!apiRes.ok) {
+        const errorText = await apiRes.text();
+        console.error(`Audio upstream error (${apiRes.status}):`, errorText);
+        res.writeHead(apiRes.status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(errorText);
+        return;
+      }
 
       res.writeHead(200, {
         'Content-Type': apiRes.headers.get('content-type') || 'audio/mpeg'
