@@ -333,20 +333,33 @@
 
                         <!-- TTS Settings Block -->
                         <div id="aud-tts-settings">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="aud-model-select">TTS Model</label>
-                                    <select id="aud-model-select" class="control-select">
-                                        <option value="elevenlabs">Loading...</option>
-                                    </select>
-                                    <div class="model-price-badge" id="aud-price-info"></div>
+                            <div class="form-group">
+                                <label for="aud-model-select">TTS Model (Модель озвучки)</label>
+                                <select id="aud-model-select" class="control-select">
+                                    <option value="elevenlabs">Loading...</option>
+                                </select>
+                                <div class="model-price-badge" id="aud-price-info"></div>
+                            </div>
+
+                            <div class="form-group" style="margin-top: 14px;">
+                                <div class="voice-header-row">
+                                    <label for="aud-voice-select">Narrator Voice (Голос диктора)</label>
+                                    <div class="voice-filter-tabs" id="voice-filter-tabs">
+                                        <button type="button" class="voice-filter-btn active" data-filter="all">Все</button>
+                                        <button type="button" class="voice-filter-btn" data-filter="female">👩 Женские</button>
+                                        <button type="button" class="voice-filter-btn" data-filter="male">👨 Мужские</button>
+                                    </div>
                                 </div>
-                                <div class="form-group">
-                                    <label for="aud-voice-select">Voice</label>
+                                <div class="voice-select-wrapper">
                                     <select id="aud-voice-select" class="control-select">
                                         <option value="alloy">alloy</option>
                                     </select>
+                                    <button type="button" class="btn voice-preview-btn" id="btn-preview-voice" title="Прослушать демо-образец голоса диктора">
+                                        <span class="preview-icon">▶</span>
+                                        <span class="preview-text">Демо</span>
+                                    </button>
                                 </div>
+                                <div class="voice-meta-badge" id="voice-meta-badge"></div>
                             </div>
                         </div>
 

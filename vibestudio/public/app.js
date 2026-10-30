@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initApp();
     setupTextareaAutoGrow();
     setupVideoRefHandlers();
+    setupVoiceHandlers();
 });
 
 // Helper to get model health & readiness status
@@ -213,6 +214,7 @@ async function initApp() {
 
             // Add listeners to audio model selection
             document.getElementById('aud-model-select').addEventListener('change', () => {
+                stopVoicePreview();
                 updateAudioModelVoices();
                 updateAudioPrice();
             });
@@ -992,30 +994,308 @@ function toggleAudioFields() {
     updateAudioPrice();
 }
 
+// Voice metadata dictionary (gender, icon, display name, character/timbre)
+const VOICE_CATALOG = {
+    // OpenAI & standard voices
+    'alloy': { gender: 'neutral', icon: '🧑', name: 'Alloy', desc: 'Универсальный, сбалансированный тембр' },
+    'echo': { gender: 'male', icon: '👨', name: 'Echo', desc: 'Мужской, мягкий и размеренный' },
+    'fable': { gender: 'male', icon: '👨', name: 'Fable', desc: 'Мужской, британский акцент, выразительный' },
+    'onyx': { gender: 'male', icon: '👨', name: 'Onyx', desc: 'Мужской, глубокий, авторитетный диктор' },
+    'nova': { gender: 'female', icon: '👩', name: 'Nova', desc: 'Женский, энергичный, теплый и ясный' },
+    'shimmer': { gender: 'female', icon: '👩', name: 'Shimmer', desc: 'Женский, эмоциональный, нежный' },
+    'ash': { gender: 'male', icon: '👨', name: 'Ash', desc: 'Мужской, спокойный, непринужденный' },
+    'ballad': { gender: 'male', icon: '👨', name: 'Ballad', desc: 'Мужской, мелодичный, повествовательный' },
+    'coral': { gender: 'female', icon: '👩', name: 'Coral', desc: 'Женский, дружелюбный, открытый' },
+    'sage': { gender: 'female', icon: '👩', name: 'Sage', desc: 'Женский, спокойный, мягкий' },
+    'verse': { gender: 'male', icon: '👨', name: 'Verse', desc: 'Мужской, выразительный рассказчик' },
+
+    // ElevenLabs voices
+    'rachel': { gender: 'female', icon: '👩', name: 'Rachel', desc: 'Женский, профессиональный диктор, спокойный' },
+    'domi': { gender: 'female', icon: '👩', name: 'Domi', desc: 'Женский, энергичный, уверенный тон' },
+    'bella': { gender: 'female', icon: '👩', name: 'Bella', desc: 'Женский, мягкий, юный, естественный' },
+    'elli': { gender: 'female', icon: '👩', name: 'Elli', desc: 'Женский, эмоциональный, молодой' },
+    'charlotte': { gender: 'female', icon: '👩', name: 'Charlotte', desc: 'Женский, бархатистый, притягательный' },
+    'dorothy': { gender: 'female', icon: '👩', name: 'Dorothy', desc: 'Женский, приятный, сказочный/книжный' },
+    'sarah': { gender: 'female', icon: '👩', name: 'Sarah', desc: 'Женский, новостной, четкая дикция' },
+    'emily': { gender: 'female', icon: '👩', name: 'Emily', desc: 'Женский, спокойный, аудиокниги' },
+    'lily': { gender: 'female', icon: '👩', name: 'Lily', desc: 'Женский, теплый, элегантный' },
+    'matilda': { gender: 'female', icon: '👩', name: 'Matilda', desc: 'Женский, интеллигентный, мягкий' },
+    'adam': { gender: 'male', icon: '👨', name: 'Adam', desc: 'Мужской, глубокий дикторский бас' },
+    'antoni': { gender: 'male', icon: '👨', name: 'Antoni', desc: 'Мужской, сбалансированный, гид/реклама' },
+    'arnold': { gender: 'male', icon: '👨', name: 'Arnold', desc: 'Мужской, четкий, харизматичный' },
+    'josh': { gender: 'male', icon: '👨', name: 'Josh', desc: 'Мужской, молодой, глубокий тембр' },
+    'sam': { gender: 'male', icon: '👨', name: 'Sam', desc: 'Мужской, динамичный, уверенный' },
+    'daniel': { gender: 'male', icon: '👨', name: 'Daniel', desc: 'Мужской, авторитетный британский диктор' },
+    'charlie': { gender: 'male', icon: '👨', name: 'Charlie', desc: 'Мужской, дружеский, разговорный' },
+    'james': { gender: 'male', icon: '👨', name: 'James', desc: 'Мужской, документальный, солидный' },
+    'fin': { gender: 'male', icon: '👨', name: 'Fin', desc: 'Мужской, бодрый, характерный' },
+    'callum': { gender: 'male', icon: '👨', name: 'Callum', desc: 'Мужской, интенсивный, драматический' },
+    'liam': { gender: 'male', icon: '👨', name: 'Liam', desc: 'Мужской, ясный, современный' },
+    'george': { gender: 'male', icon: '👨', name: 'George', desc: 'Мужской, британский классический тембр' },
+    'brian': { gender: 'male', icon: '👨', name: 'Brian', desc: 'Мужской, зрелый, резонирующий' },
+    'bill': { gender: 'male', icon: '👨', name: 'Bill', desc: 'Мужской, доверительный, документальный' },
+
+    // Google Gemini TTS voices
+    'Zephyr': { gender: 'male', icon: '👨', name: 'Zephyr', desc: 'Мужской, спокойный, мягкий и ровный' },
+    'Puck': { gender: 'male', icon: '👨', name: 'Puck', desc: 'Мужской, озорной, живой, юношеский' },
+    'Charon': { gender: 'male', icon: '👨', name: 'Charon', desc: 'Мужской, глубокий, низкий и солидный' },
+    'Kore': { gender: 'female', icon: '👩', name: 'Kore', desc: 'Женский, теплый, естественный и ясный' },
+    'Fenrir': { gender: 'male', icon: '👨', name: 'Fenrir', desc: 'Мужской, энергичный, звучный' },
+    'Leda': { gender: 'female', icon: '👩', name: 'Leda', desc: 'Женский, мягкий, заботливый тон' },
+    'Orus': { gender: 'male', icon: '👨', name: 'Orus', desc: 'Мужской, уверенный диктор/ведущий' },
+    'Aoede': { gender: 'female', icon: '👩', name: 'Aoede', desc: 'Женский, звонкий, мелодичный' },
+    'Callirrhoe': { gender: 'female', icon: '👩', name: 'Callirrhoe', desc: 'Женский, плавный, выразительный' },
+    'Autonoe': { gender: 'female', icon: '👩', name: 'Autonoe', desc: 'Женский, размеренный, ясный' },
+    'Enceladus': { gender: 'male', icon: '👨', name: 'Enceladus', desc: 'Мужской, строгий, четкий' },
+    'Iapetus': { gender: 'male', icon: '👨', name: 'Iapetus', desc: 'Мужской, бархатистый, низкий' },
+    'Umbriel': { gender: 'male', icon: '👨', name: 'Umbriel', desc: 'Мужской, задумчивый, спокойный' },
+    'Algieba': { gender: 'female', icon: '👩', name: 'Algieba', desc: 'Женский, яркий, динамичный' },
+    'Despina': { gender: 'female', icon: '👩', name: 'Despina', desc: 'Женский, юный, легкий' },
+    'Erinome': { gender: 'female', icon: '👩', name: 'Erinome', desc: 'Женский, вдохновляющий' },
+    'Algenib': { gender: 'male', icon: '👨', name: 'Algenib', desc: 'Мужской, информационный, технический' },
+    'Rasalgethi': { gender: 'male', icon: '👨', name: 'Rasalgethi', desc: 'Мужской, повествовательный рассказчик' },
+    'Laomedeia': { gender: 'female', icon: '👩', name: 'Laomedeia', desc: 'Женский, мягкий тон' },
+    'Achernar': { gender: 'male', icon: '👨', name: 'Achernar', desc: 'Мужской, энергичный диктор' },
+    'Alnilam': { gender: 'male', icon: '👨', name: 'Alnilam', desc: 'Мужской, классический диктор' },
+    'Schedar': { gender: 'female', icon: '👩', name: 'Schedar', desc: 'Женский, четкий, официальный' },
+    'Gacrux': { gender: 'male', icon: '👨', name: 'Gacrux', desc: 'Мужской, глубокий тембр' },
+    'Pulcherrima': { gender: 'female', icon: '👩', name: 'Pulcherrima', desc: 'Женский, благородный, чистый' },
+    'Achird': { gender: 'male', icon: '👨', name: 'Achird', desc: 'Мужской, бодрый и оптимистичный' },
+    'Zubenelgenubi': { gender: 'male', icon: '👨', name: 'Zubenelgenubi', desc: 'Мужской, нейтральный' },
+    'Vindemiatrix': { gender: 'female', icon: '👩', name: 'Vindemiatrix', desc: 'Женский, спокойный' },
+    'Sadachbia': { gender: 'male', icon: '👨', name: 'Sadachbia', desc: 'Мужской, размеренный' },
+    'Sadaltager': { gender: 'male', icon: '👨', name: 'Sadaltager', desc: 'Мужской, убедительный' },
+    'Sulafat': { gender: 'female', icon: '👩', name: 'Sulafat', desc: 'Женский, доброжелательный' }
+};
+
+// Helper to get formatted voice info
+function getVoiceDetails(voiceKey) {
+    if (VOICE_CATALOG[voiceKey]) {
+        return VOICE_CATALOG[voiceKey];
+    }
+    let gender = 'neutral';
+    let icon = '🧑';
+    let cleanName = voiceKey;
+
+    if (voiceKey.startsWith('af_') || voiceKey.startsWith('bf_')) {
+        gender = 'female';
+        icon = '👩';
+        cleanName = voiceKey.slice(3);
+    } else if (voiceKey.startsWith('am_') || voiceKey.startsWith('bm_')) {
+        gender = 'male';
+        icon = '👨';
+        cleanName = voiceKey.slice(3);
+    } else {
+        const lower = voiceKey.toLowerCase();
+        if (/(female|woman|girl|isla|emily|jenny|mia|alice|emma|eva|mary|olivia|sophia|anna|elena)/i.test(lower)) {
+            gender = 'female';
+            icon = '👩';
+        } else if (/(male|man|boy|grant|klaus|guy|george|lewis|john|david|michael|thomas|alex)/i.test(lower)) {
+            gender = 'male';
+            icon = '👨';
+        }
+    }
+    cleanName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+    const desc = gender === 'female' ? 'Женский голос' : gender === 'male' ? 'Мужской голос' : 'Универсальный голос';
+    return { gender, icon, name: cleanName, desc };
+}
+
+// Voice preview & filter state
+let currentVoiceGenderFilter = 'all';
+let previewAudioPlayer = null;
+let currentPreviewKey = null;
+const previewVoiceCache = {};
+
+// Setup handlers for voice filter tabs and demo preview button
+function setupVoiceHandlers() {
+    const filterTabs = document.getElementById('voice-filter-tabs');
+    if (filterTabs) {
+        filterTabs.addEventListener('click', (e) => {
+            const btn = e.target.closest('.voice-filter-btn');
+            if (!btn) return;
+            filterTabs.querySelectorAll('.voice-filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentVoiceGenderFilter = btn.dataset.filter || 'all';
+            updateAudioModelVoices();
+        });
+    }
+
+    const voiceSelect = document.getElementById('aud-voice-select');
+    if (voiceSelect) {
+        voiceSelect.addEventListener('change', () => {
+            stopVoicePreview();
+            updateVoiceMetaBadge();
+        });
+    }
+
+    const previewBtn = document.getElementById('btn-preview-voice');
+    if (previewBtn) {
+        previewBtn.addEventListener('click', handleVoicePreview);
+    }
+}
+
 // Update voice list for selected TTS model
 function updateAudioModelVoices() {
     const modelName = document.getElementById('aud-model-select').value;
     const voiceSelect = document.getElementById('aud-voice-select');
+    const prevSelectedVoice = voiceSelect.value;
     voiceSelect.innerHTML = '';
-    
+
     const model = audioModels.find(m => m.name === modelName);
-    
-    if (model && model.voices) {
-        model.voices.forEach(voice => {
-            const option = document.createElement('option');
-            option.value = voice;
-            option.textContent = voice;
-            
-            if (voice === 'nova' || voice === 'alloy') {
-                option.selected = true;
-            }
-            voiceSelect.appendChild(option);
+    const rawVoices = (model && model.voices && model.voices.length > 0) ? model.voices : ['alloy'];
+
+    // Filter by gender if requested
+    let filteredVoices = rawVoices;
+    if (currentVoiceGenderFilter !== 'all') {
+        const matches = rawVoices.filter(v => {
+            const details = getVoiceDetails(v);
+            return details.gender === currentVoiceGenderFilter;
         });
-    } else {
+        if (matches.length > 0) {
+            filteredVoices = matches;
+        }
+    }
+
+    filteredVoices.forEach((voice, index) => {
         const option = document.createElement('option');
-        option.value = 'alloy';
-        option.textContent = 'alloy';
+        option.value = voice;
+        const details = getVoiceDetails(voice);
+        option.textContent = `${details.icon} ${details.name} — ${details.desc}`;
+
+        if (voice === prevSelectedVoice || (!prevSelectedVoice && index === 0)) {
+            option.selected = true;
+        }
         voiceSelect.appendChild(option);
+    });
+
+    if (!voiceSelect.value && filteredVoices.length > 0) {
+        voiceSelect.value = filteredVoices[0];
+    }
+
+    updateVoiceMetaBadge();
+}
+
+// Update narrator metadata badge below select
+function updateVoiceMetaBadge() {
+    const voiceSelect = document.getElementById('aud-voice-select');
+    const badge = document.getElementById('voice-meta-badge');
+    if (!badge || !voiceSelect) return;
+
+    const voice = voiceSelect.value;
+    if (!voice) {
+        badge.innerHTML = '';
+        badge.style.display = 'none';
+        return;
+    }
+
+    const details = getVoiceDetails(voice);
+    badge.innerHTML = `<span style="font-size: 16px;">${details.icon}</span> <span><strong>${details.name}</strong> • ${details.desc} <span style="opacity: 0.6; font-size: 11px;">(ID: ${voice})</span></span>`;
+    badge.style.display = 'flex';
+}
+
+// Voice preview handler
+async function handleVoicePreview() {
+    const model = document.getElementById('aud-model-select').value;
+    const voice = document.getElementById('aud-voice-select').value;
+    const btn = document.getElementById('btn-preview-voice');
+    if (!voice || !btn) return;
+
+    const key = `${model}_${voice}`;
+
+    // If currently playing, stop it
+    if (previewAudioPlayer && currentPreviewKey === key && !previewAudioPlayer.paused) {
+        stopVoicePreview();
+        return;
+    }
+
+    stopVoicePreview();
+
+    const iconSpan = btn.querySelector('.preview-icon');
+    const textSpan = btn.querySelector('.preview-text');
+
+    // Check cache
+    if (previewVoiceCache[key]) {
+        playPreviewAudio(previewVoiceCache[key], key);
+        return;
+    }
+
+    btn.classList.add('loading');
+    iconSpan.textContent = '⏳';
+    textSpan.textContent = 'Загрузка...';
+
+    try {
+        const sampleText = 'Привет! Это пример звучания моего голоса.';
+        const url = `/api/audio?text=${encodeURIComponent(sampleText)}&model=${encodeURIComponent(model)}&voice=${encodeURIComponent(voice)}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+            let errMsg = `Ошибка (${res.status})`;
+            try {
+                const errData = await res.json();
+                errMsg = errData.error?.message || errData.message || errMsg;
+            } catch (e) {}
+            throw new Error(errMsg);
+        }
+
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        previewVoiceCache[key] = blobUrl;
+
+        btn.classList.remove('loading');
+        playPreviewAudio(blobUrl, key);
+    } catch (err) {
+        console.error('Voice preview error:', err);
+        btn.classList.remove('loading');
+        iconSpan.textContent = '▶';
+        textSpan.textContent = 'Демо';
+        alert(`Не удалось загрузить демо голоса: ${err.message}`);
+    }
+}
+
+// Play preview audio with playback button state
+function playPreviewAudio(blobUrl, key) {
+    const btn = document.getElementById('btn-preview-voice');
+    if (!btn) return;
+    const iconSpan = btn.querySelector('.preview-icon');
+    const textSpan = btn.querySelector('.preview-text');
+
+    previewAudioPlayer = new Audio(blobUrl);
+    currentPreviewKey = key;
+
+    btn.classList.add('playing');
+    iconSpan.textContent = '⏹';
+    textSpan.textContent = 'Стоп';
+
+    previewAudioPlayer.onended = () => {
+        stopVoicePreview();
+    };
+    previewAudioPlayer.onerror = () => {
+        stopVoicePreview();
+    };
+
+    previewAudioPlayer.play().catch(e => {
+        console.error('Audio play error:', e);
+        stopVoicePreview();
+    });
+}
+
+// Stop preview playback
+function stopVoicePreview() {
+    if (previewAudioPlayer) {
+        try {
+            previewAudioPlayer.pause();
+            previewAudioPlayer.currentTime = 0;
+        } catch (e) {}
+        previewAudioPlayer = null;
+    }
+    currentPreviewKey = null;
+
+    const btn = document.getElementById('btn-preview-voice');
+    if (btn) {
+        btn.classList.remove('playing', 'loading');
+        const iconSpan = btn.querySelector('.preview-icon');
+        const textSpan = btn.querySelector('.preview-text');
+        if (iconSpan) iconSpan.textContent = '▶';
+        if (textSpan) textSpan.textContent = 'Демо';
     }
 }
 
@@ -1068,6 +1348,8 @@ function updateAudioPrice() {
 
 // Audio Generation
 async function generateAudio() {
+    stopVoicePreview();
+
     const prompt = document.getElementById('aud-prompt').value.trim();
     if (!prompt) {
         alert('Please write a prompt or text for generation!');
