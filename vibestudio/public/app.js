@@ -13,11 +13,128 @@ let lastGeneratedImageBlobUrl = null;
 let lastGeneratedVideoBlobUrl = null;
 let lastGeneratedAudioBlobUrl = null;
 
+// Reference image state for Video Generator
+let videoRefFile = null;
+let videoRefUrl = '';
+
 // Initialization on load
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
     setupTextareaAutoGrow();
+    setupVideoRefHandlers();
 });
+
+// Helper to get model health & readiness status
+function getModelHealthInfo(model) {
+    if (!model || !model.health) {
+        return {
+            status: 'unknown',
+            label: 'Unknown',
+            icon: '⚪',
+            className: 'status-unknown',
+            successRate: null
+        };
+    }
+    const status = model.health.status || 'unknown';
+    const rate = (model.health.success_rate !== null && model.health.success_rate !== undefined)
+        ? Math.round(model.health.success_rate)
+        : null;
+
+    if (status === 'healthy') {
+        return {
+            status: 'healthy',
+            label: 'Ready',
+            icon: '🟢',
+            className: 'status-healthy',
+            successRate: rate
+        };
+    } else if (status === 'degraded') {
+        return {
+            status: 'degraded',
+            label: 'Degraded',
+            icon: '🟡',
+            className: 'status-degraded',
+            successRate: rate
+        };
+    } else if (status === 'down') {
+        return {
+            status: 'down',
+            label: 'Offline',
+            icon: '🔴',
+            className: 'status-down',
+            successRate: rate
+        };
+    }
+    return {
+        status: 'unknown',
+        label: 'Unchecked',
+        icon: '⚪',
+        className: 'status-unknown',
+        successRate: rate
+    };
+}
+
+// Sort models: healthy first, then unknown, then degraded, then down
+function sortModelsByHealth(models) {
+    const priority = { healthy: 1, unknown: 2, degraded: 3, down: 4 };
+    return [...models].sort((a, b) => {
+        const pa = priority[a.health?.status || 'unknown'] || 2;
+        const pb = priority[b.health?.status || 'unknown'] || 2;
+        if (pa !== pb) return pa - pb;
+        return (a.title || a.name || '').localeCompare(b.title || b.name || '');
+    });
+}
+
+// Check models readiness across all loaded categories at startup
+function checkModelsReadiness() {
+    const allModels = [
+        ...textModels,
+        ...imageModels,
+        ...videoModels,
+        ...audioModels
+    ];
+
+    const healthTextEl = document.getElementById('models-health-text');
+    const healthDotEl = document.getElementById('health-pulse-dot');
+    const healthContainer = document.getElementById('models-health-summary');
+
+    if (allModels.length === 0) {
+        if (healthTextEl) healthTextEl.textContent = 'No models available';
+        if (healthDotEl) healthDotEl.className = 'health-pulse-dot error';
+        return;
+    }
+
+    let healthyCount = 0;
+    let degradedCount = 0;
+    let downCount = 0;
+    let unknownCount = 0;
+
+    allModels.forEach(m => {
+        const status = m.health?.status || 'unknown';
+        if (status === 'healthy') healthyCount++;
+        else if (status === 'degraded') degradedCount++;
+        else if (status === 'down') downCount++;
+        else unknownCount++;
+    });
+
+    if (healthTextEl) {
+        healthTextEl.textContent = `${healthyCount}/${allModels.length} models ready`;
+    }
+
+    if (healthContainer) {
+        healthContainer.title = `Models readiness: ${healthyCount} ready (healthy), ${degradedCount} degraded, ${downCount} down, ${unknownCount} unverified.`;
+    }
+
+    if (healthDotEl) {
+        if (healthyCount === 0 && downCount > 0) {
+            healthDotEl.className = 'health-pulse-dot error';
+        } else if (degradedCount > 5 || downCount > 0) {
+            healthDotEl.className = 'health-pulse-dot warning';
+        } else {
+            healthDotEl.className = 'health-pulse-dot';
+        }
+    }
+}
 
 // Set up auto-height for textarea in chat
 function setupTextareaAutoGrow() {
@@ -56,31 +173,35 @@ async function initApp() {
         if (textRes.ok) {
             textModels = await textRes.json();
             populateTextModels();
-            
+
             // Add listener to text model selection
             document.getElementById('chat-model-select').addEventListener('change', updateChatPrice);
             updateChatPrice();
         }
-        
+
         // 3. Get image and video models
         const imageRes = await fetch('/api/image-models');
         if (imageRes.ok) {
             const rawImageModels = await imageRes.json();
-            
+
             // Separate into images and video by modalities or category field
             imageModels = rawImageModels.filter(m => m.category === 'image' || (m.output_modalities && m.output_modalities.includes('image')));
             videoModels = rawImageModels.filter(m => m.category === 'video' || (m.output_modalities && m.output_modalities.includes('video')));
-            
+
             populateImageModels();
             populateVideoModels();
 
             // Add listeners to image and video model selection
             document.getElementById('img-model-select').addEventListener('change', updateImagePrice);
-            document.getElementById('vid-model-select').addEventListener('change', updateVideoPrice);
+            document.getElementById('vid-model-select').addEventListener('change', () => {
+                updateVideoPrice();
+                updateVideoRefSupport();
+            });
             document.getElementById('vid-duration').addEventListener('change', updateVideoPrice);
-            
+
             updateImagePrice();
             updateVideoPrice();
+            updateVideoRefSupport();
         }
 
         // 4. Get audio models (TTS and music)
@@ -88,7 +209,7 @@ async function initApp() {
         if (audioRes.ok) {
             audioModels = await audioRes.json();
             populateAudioModels();
-            
+
             // Add listeners to audio model selection
             document.getElementById('aud-model-select').addEventListener('change', () => {
                 updateAudioModelVoices();
@@ -96,11 +217,14 @@ async function initApp() {
             });
             document.getElementById('aud-music-model-select').addEventListener('change', updateAudioPrice);
             document.getElementById('aud-music-duration').addEventListener('input', updateAudioPrice);
-            
+
             updateAudioModelVoices();
             updateAudioPrice();
         }
-        
+
+        // Check models readiness across all categories
+        checkModelsReadiness();
+
         updateServerStatus(true, 'Proxy server active');
     } catch (err) {
         console.error('Initialization error:', err);
@@ -109,17 +233,155 @@ async function initApp() {
     }
 }
 
-// Functions to update pricing info
+// Check if a video model supports reference image (Image-to-Video)
+function modelSupportsImage(model) {
+    if (!model) return false;
+    const hasModality = model.input_modalities && model.input_modalities.includes('image');
+    const hasCapability = model.video_capabilities && (
+        model.video_capabilities.includes('start_frame') ||
+        model.video_capabilities.includes('end_frame') ||
+        model.video_capabilities.includes('reference_images')
+    );
+    return Boolean(hasModality || hasCapability);
+}
+
+// Update reference image UI based on selected video model
+function updateVideoRefSupport() {
+    const modelName = document.getElementById('vid-model-select').value;
+    const model = videoModels.find(m => m.name === modelName);
+    const badge = document.getElementById('vid-ref-badge');
+    const dropzone = document.getElementById('vid-ref-dropzone');
+    const urlInput = document.getElementById('vid-ref-url');
+
+    if (!badge || !dropzone || !urlInput) return;
+
+    const supports = modelSupportsImage(model);
+    if (supports) {
+        let text = '✨ I2V Supported: Image to Video';
+        if (model.video_capabilities && model.video_capabilities.includes('end_frame')) {
+            text = '✨ I2V Supported: Start & End frames';
+        }
+        badge.textContent = text;
+        badge.className = 'ref-support-badge';
+        dropzone.classList.remove('disabled');
+        urlInput.disabled = false;
+        urlInput.placeholder = 'Or paste direct image URL (https://...)';
+    } else {
+        badge.textContent = '❌ Text-to-Video only (No image support)';
+        badge.className = 'ref-support-badge unsupported';
+        dropzone.classList.add('disabled');
+        urlInput.disabled = true;
+        urlInput.placeholder = 'Selected model generates from text prompt only';
+    }
+}
+
+// Setup handlers for drag-and-drop, file picking, and URL input
+function setupVideoRefHandlers() {
+    const fileInput = document.getElementById('vid-ref-file');
+    const dropzone = document.getElementById('vid-ref-dropzone');
+    const urlInput = document.getElementById('vid-ref-url');
+
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                handleVideoRefFile(e.target.files[0]);
+            }
+        });
+    }
+
+    if (dropzone) {
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (!dropzone.classList.contains('disabled')) {
+                dropzone.classList.add('dragover');
+            }
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('dragover');
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (dropzone.classList.contains('disabled')) return;
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                handleVideoRefFile(e.dataTransfer.files[0]);
+            }
+        });
+    }
+
+    if (urlInput) {
+        urlInput.addEventListener('input', (e) => {
+            videoRefUrl = e.target.value.trim();
+            if (videoRefUrl && !videoRefFile) {
+                const promptView = document.getElementById('vid-ref-prompt');
+                const previewBox = document.getElementById('vid-ref-preview-box');
+                const previewImg = document.getElementById('vid-ref-preview-img');
+                const filenameEl = document.getElementById('vid-ref-filename');
+                const statusEl = document.getElementById('vid-ref-status-tag');
+
+                if (promptView) promptView.classList.add('hidden');
+                if (previewBox) previewBox.classList.remove('hidden');
+                if (previewImg) previewImg.src = videoRefUrl;
+                if (filenameEl) filenameEl.textContent = videoRefUrl.split('/').pop().split('?')[0] || 'Image URL';
+                if (statusEl) statusEl.textContent = 'Direct Web URL';
+            } else if (!videoRefUrl && !videoRefFile) {
+                clearVideoReferenceImage();
+            }
+        });
+    }
+}
+
+function handleVideoRefFile(file) {
+    videoRefFile = file;
+    const promptView = document.getElementById('vid-ref-prompt');
+    const previewBox = document.getElementById('vid-ref-preview-box');
+    const previewImg = document.getElementById('vid-ref-preview-img');
+    const filenameEl = document.getElementById('vid-ref-filename');
+    const statusEl = document.getElementById('vid-ref-status-tag');
+
+    if (promptView) promptView.classList.add('hidden');
+    if (previewBox) previewBox.classList.remove('hidden');
+
+    if (previewImg) previewImg.src = URL.createObjectURL(file);
+    if (filenameEl) filenameEl.textContent = file.name;
+    if (statusEl) statusEl.textContent = `Attached (${(file.size / 1024).toFixed(0)} KB)`;
+}
+
+function clearVideoReferenceImage() {
+    videoRefFile = null;
+    videoRefUrl = '';
+    const fileInput = document.getElementById('vid-ref-file');
+    const urlInput = document.getElementById('vid-ref-url');
+    const promptView = document.getElementById('vid-ref-prompt');
+    const previewBox = document.getElementById('vid-ref-preview-box');
+    const previewImg = document.getElementById('vid-ref-preview-img');
+
+    if (fileInput) fileInput.value = '';
+    if (urlInput) urlInput.value = '';
+    if (promptView) promptView.classList.remove('hidden');
+    if (previewBox) previewBox.classList.add('hidden');
+    if (previewImg) previewImg.src = '';
+}
+
+// Functions to update pricing & health info
 
 function updateChatPrice() {
     const modelName = document.getElementById('chat-model-select').value;
     const priceBadge = document.getElementById('chat-price-info');
     const model = textModels.find(m => m.name === modelName);
-    
-    if (model && model.pricing) {
-        const inPrice = (parseFloat(model.pricing.promptTextTokens || 0) * 1e6).toFixed(3);
-        const outPrice = (parseFloat(model.pricing.completionTextTokens || 0) * 1e6).toFixed(3);
-        priceBadge.textContent = `1M tokens: In ~${inPrice}P / Out ~${outPrice}P`;
+
+    if (model) {
+        const hInfo = getModelHealthInfo(model);
+        const healthHtml = `<span class="status-pill ${hInfo.className}">${hInfo.icon} ${hInfo.label}${hInfo.successRate !== null ? ` (${hInfo.successRate}%)` : ''}</span>`;
+        let priceHtml = '';
+        if (model.pricing) {
+            const inPrice = (parseFloat(model.pricing.promptTextTokens || 0) * 1e6).toFixed(3);
+            const outPrice = (parseFloat(model.pricing.completionTextTokens || 0) * 1e6).toFixed(3);
+            priceHtml = `1M tok: In ~${inPrice}P / Out ~${outPrice}P`;
+        }
+        priceBadge.innerHTML = `${healthHtml}${priceHtml}`;
         priceBadge.style.display = 'inline-block';
     } else {
         priceBadge.style.display = 'none';
@@ -130,16 +392,17 @@ function updateImagePrice() {
     const modelName = document.getElementById('img-model-select').value;
     const priceBadge = document.getElementById('img-price-info');
     const model = imageModels.find(m => m.name === modelName);
-    
-    if (model && model.pricing) {
-        const price = parseFloat(model.pricing.completionImageTokens || 0);
-        if (price > 0) {
-            priceBadge.textContent = `Price: ${price.toFixed(4)} Pollen / art`;
-            priceBadge.style.display = 'inline-block';
-        } else {
-            priceBadge.textContent = 'Price: Free / Limit';
-            priceBadge.style.display = 'inline-block';
+
+    if (model) {
+        const hInfo = getModelHealthInfo(model);
+        const healthHtml = `<span class="status-pill ${hInfo.className}">${hInfo.icon} ${hInfo.label}${hInfo.successRate !== null ? ` (${hInfo.successRate}%)` : ''}</span>`;
+        let priceHtml = '';
+        if (model.pricing) {
+            const price = parseFloat(model.pricing.completionImageTokens || 0);
+            priceHtml = price > 0 ? `Price: ${price.toFixed(4)} Pollen / art` : 'Price: Free / Limit';
         }
+        priceBadge.innerHTML = `${healthHtml}${priceHtml}`;
+        priceBadge.style.display = 'inline-block';
     } else {
         priceBadge.style.display = 'none';
     }
@@ -150,23 +413,30 @@ function updateVideoPrice() {
     const duration = parseInt(document.getElementById('vid-duration').value || 4);
     const priceBadge = document.getElementById('vid-price-info');
     const model = videoModels.find(m => m.name === modelName);
-    
-    if (model && model.pricing) {
-        const pricePerSec = parseFloat(model.pricing.completionVideoSeconds || 0);
-        const totalEst = pricePerSec * duration;
-        priceBadge.textContent = `Price: ${pricePerSec.toFixed(3)}P/sec (Total: ~${totalEst.toFixed(2)}P)`;
+
+    updateVideoRefSupport();
+
+    if (model) {
+        const hInfo = getModelHealthInfo(model);
+        const healthHtml = `<span class="status-pill ${hInfo.className}">${hInfo.icon} ${hInfo.label}${hInfo.successRate !== null ? ` (${hInfo.successRate}%)` : ''}</span>`;
+        let priceHtml = '';
+        if (model.pricing) {
+            const pricePerSec = parseFloat(model.pricing.completionVideoSeconds || 0);
+            const totalEst = pricePerSec * duration;
+            priceHtml = pricePerSec > 0 ? `Price: ${pricePerSec.toFixed(3)}P/sec (~${totalEst.toFixed(2)}P)` : 'Price: Free / Limit';
+        }
+        priceBadge.innerHTML = `${healthHtml}${priceHtml}`;
         priceBadge.style.display = 'inline-block';
     } else {
         priceBadge.style.display = 'none';
     }
 }
 
-
 // Update network indicator
 function updateServerStatus(isOnline, text) {
     const dot = document.getElementById('status-dot');
     const textEl = document.getElementById('status-text');
-    
+
     if (isOnline) {
         dot.className = 'status-dot online';
     } else {
@@ -179,19 +449,19 @@ function updateServerStatus(isOnline, text) {
 function populateTextModels() {
     const select = document.getElementById('chat-model-select');
     select.innerHTML = '';
-    
-    // Filter only text models
-    const textOnly = textModels.filter(m => m.category === 'text');
-    
+
+    // Filter only text models and sort by health
+    const textOnly = sortModelsByHealth(textModels.filter(m => m.category === 'text'));
+
     textOnly.forEach(model => {
         const option = document.createElement('option');
         option.value = model.name;
-        
-        // Format display (Name + Brand + if Paid)
+
+        const hInfo = getModelHealthInfo(model);
         const brand = model.brand ? `[${model.brand}] ` : '';
         const paid = model.paid_only ? ' (Premium)' : '';
-        option.textContent = `${brand}${model.title || model.name}${paid}`;
-        
+        option.textContent = `${hInfo.icon} ${brand}${model.title || model.name}${paid}`;
+
         // Make "openai" selected by default
         if (model.name === 'openai') {
             option.selected = true;
@@ -204,15 +474,17 @@ function populateTextModels() {
 function populateImageModels() {
     const select = document.getElementById('img-model-select');
     select.innerHTML = '';
-    
-    imageModels.forEach(model => {
+
+    const sorted = sortModelsByHealth(imageModels);
+    sorted.forEach(model => {
         const option = document.createElement('option');
         option.value = model.name;
-        
+
+        const hInfo = getModelHealthInfo(model);
         const brand = model.brand ? `[${model.brand}] ` : '';
         const paid = model.paid_only ? ' (Premium)' : '';
-        option.textContent = `${brand}${model.title || model.name}${paid}`;
-        
+        option.textContent = `${hInfo.icon} ${brand}${model.title || model.name}${paid}`;
+
         if (model.name === 'zimage' || model.name === 'flux') {
             option.selected = true;
         }
@@ -224,16 +496,19 @@ function populateImageModels() {
 function populateVideoModels() {
     const select = document.getElementById('vid-model-select');
     select.innerHTML = '';
-    
-    videoModels.forEach(model => {
+
+    const sorted = sortModelsByHealth(videoModels);
+    sorted.forEach(model => {
         const option = document.createElement('option');
         option.value = model.name;
-        
+
+        const hInfo = getModelHealthInfo(model);
         const brand = model.brand ? `[${model.brand}] ` : '';
         const paid = model.paid_only ? ' (Premium)' : '';
-        option.textContent = `${brand}${model.title || model.name}${paid}`;
-        
-        if (model.name === 'veo' || model.name === 'wan-fast') {
+        const i2v = modelSupportsImage(model) ? ' [I2V]' : '';
+        option.textContent = `${hInfo.icon} ${brand}${model.title || model.name}${i2v}${paid}`;
+
+        if (model.name === 'veo' || model.name === 'wan-fast' || model.name === 'google/veo-3.1-fast') {
             option.selected = true;
         }
         select.appendChild(option);
@@ -541,14 +816,51 @@ async function generateVideo() {
     document.getElementById('btn-download-video').disabled = true;
 
     try {
+        // Handle reference image if provided
+        let refImageUrl = videoRefUrl;
+        if (videoRefFile) {
+            const loaderText = document.getElementById('video-loader-text');
+            if (loaderText) loaderText.textContent = 'Uploading reference image to media server...';
+
+            const uploadRes = await fetch('/api/upload', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': videoRefFile.type || 'image/jpeg',
+                    'X-File-Name': videoRefFile.name
+                },
+                body: videoRefFile
+            });
+
+            if (!uploadRes.ok) {
+                let uploadErrMsg = `Upload failed (${uploadRes.status})`;
+                try {
+                    const uploadErrJson = await uploadRes.json();
+                    uploadErrMsg = uploadErrJson.details || uploadErrJson.error || uploadErrMsg;
+                } catch (e) {}
+                throw new Error(uploadErrMsg);
+            }
+
+            const uploadData = await uploadRes.json();
+            refImageUrl = uploadData.url;
+            console.log('Reference image uploaded successfully:', refImageUrl);
+        }
+
+        const loaderText = document.getElementById('video-loader-text');
+        if (loaderText) loaderText.textContent = 'Initializing video render. Video generation takes more time...';
+
         const queryParams = new URLSearchParams({
             prompt,
             model,
             width: width.toString(),
             height: height.toString(),
             duration,
-            seed
+            seed,
+            aspectRatio: aspect
         });
+
+        if (refImageUrl) {
+            queryParams.set('image', refImageUrl);
+        }
 
         const fetchUrl = `/api/video?${queryParams.toString()}`;
         const response = await fetch(fetchUrl);
@@ -615,18 +927,19 @@ function downloadVideo() {
 function populateAudioModels() {
     const select = document.getElementById('aud-model-select');
     select.innerHTML = '';
-    
-    // Filter models that have available voices (these are TTS speech synthesis models)
-    const ttsModels = audioModels.filter(m => m.voices && m.voices.length > 0);
-    
+
+    // Filter models that have available voices (these are TTS speech synthesis models) and sort by health
+    const ttsModels = sortModelsByHealth(audioModels.filter(m => m.voices && m.voices.length > 0));
+
     ttsModels.forEach(model => {
         const option = document.createElement('option');
         option.value = model.name;
-        
+
+        const hInfo = getModelHealthInfo(model);
         const brand = model.brand ? `[${model.brand}] ` : '';
         const paid = model.paid_only ? ' (Premium)' : '';
-        option.textContent = `${brand}${model.title || model.name}${paid}`;
-        
+        option.textContent = `${hInfo.icon} ${brand}${model.title || model.name}${paid}`;
+
         if (model.name === 'elevenlabs' || model.name === 'elevenflash') {
             option.selected = true;
         }
@@ -683,15 +996,21 @@ function updateAudioModelVoices() {
 // Update pricing information for audio
 function updateAudioPrice() {
     const type = document.getElementById('aud-type').value;
-    
+
     if (type === 'tts') {
         const modelName = document.getElementById('aud-model-select').value;
         const priceBadge = document.getElementById('aud-price-info');
         const model = audioModels.find(m => m.name === modelName);
-        
-        if (model && model.pricing) {
-            const price = parseFloat(model.pricing.completionAudioTokens || 0);
-            priceBadge.textContent = `Price: ${price.toFixed(5)}P / char`;
+
+        if (model) {
+            const hInfo = getModelHealthInfo(model);
+            const healthHtml = `<span class="status-pill ${hInfo.className}">${hInfo.icon} ${hInfo.label}${hInfo.successRate !== null ? ` (${hInfo.successRate}%)` : ''}</span>`;
+            let priceHtml = '';
+            if (model.pricing) {
+                const price = parseFloat(model.pricing.completionAudioTokens || 0);
+                priceHtml = `Price: ${price.toFixed(5)}P / char`;
+            }
+            priceBadge.innerHTML = `${healthHtml}${priceHtml}`;
             priceBadge.style.display = 'inline-block';
         } else {
             priceBadge.style.display = 'none';
@@ -702,15 +1021,20 @@ function updateAudioPrice() {
         const modelName = document.getElementById('aud-music-model-select').value;
         const duration = parseInt(document.getElementById('aud-music-duration').value || 10);
         const priceBadge = document.getElementById('aud-music-price-info');
-        
-        // Temporary static pricing estimation for music (since API has no clear pricing in /models response)
-        let pricePerSec = 0.003; // by default
+        const model = audioModels.find(m => m.name === modelName);
+
+        const hInfo = getModelHealthInfo(model);
+        const healthHtml = hInfo.status !== 'unknown'
+            ? `<span class="status-pill ${hInfo.className}">${hInfo.icon} ${hInfo.label}</span>`
+            : '';
+
+        let pricePerSec = 0.003;
         if (modelName === 'stable-audio-2.5') {
             pricePerSec = 0.005;
         }
-        
+
         const totalEst = pricePerSec * duration;
-        priceBadge.textContent = `Price: ~${pricePerSec.toFixed(3)}P/sec (Total: ~${totalEst.toFixed(3)}P)`;
+        priceBadge.innerHTML = `${healthHtml}Price: ~${pricePerSec.toFixed(3)}P/sec (~${totalEst.toFixed(3)}P)`;
         priceBadge.style.display = 'inline-block';
         document.getElementById('aud-price-info').style.display = 'none';
     }

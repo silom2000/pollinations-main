@@ -50,6 +50,12 @@
                         <span class="key-label">Auth Key:</span>
                         <span class="key-value" id="key-value">Loading...</span>
                     </div>
+                    <div class="models-health-indicator" id="models-health-summary" title="Models readiness overview">
+                        <div class="health-summary-row">
+                            <span class="health-pulse-dot" id="health-pulse-dot"></span>
+                            <span class="models-health-text" id="models-health-text">Checking models readiness...</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </aside>
@@ -207,6 +213,43 @@
                             <div class="form-group">
                                 <label for="vid-seed">Seed</label>
                                 <input type="number" id="vid-seed" value="0" min="-1" class="control-input">
+                            </div>
+                        </div>
+
+                        <!-- Reference Image (Image-to-Video) Group -->
+                        <div class="form-group" id="vid-ref-group">
+                            <div class="ref-header">
+                                <label for="vid-ref-file">Reference Image (Image-to-Video)</label>
+                                <span class="ref-support-badge" id="vid-ref-badge">✨ I2V Supported</span>
+                            </div>
+
+                            <div class="ref-dropzone" id="vid-ref-dropzone">
+                                <input type="file" id="vid-ref-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
+
+                                <!-- Empty dropzone view -->
+                                <div class="ref-dropzone-prompt" id="vid-ref-prompt">
+                                    <div class="ref-icon">🖼️</div>
+                                    <div class="ref-text">
+                                        <button type="button" class="ref-browse-btn" onclick="document.getElementById('vid-ref-file').click()">Choose Image</button>
+                                        <span class="ref-or">or drag & drop</span>
+                                    </div>
+                                    <span class="ref-hint">PNG, JPG, WEBP (animates start frame)</span>
+                                </div>
+
+                                <!-- Attached preview view -->
+                                <div class="ref-preview-box hidden" id="vid-ref-preview-box">
+                                    <img id="vid-ref-preview-img" src="" alt="Reference Preview">
+                                    <div class="ref-meta">
+                                        <span class="ref-filename" id="vid-ref-filename">reference.png</span>
+                                        <span class="ref-status-tag" id="vid-ref-status-tag">Ready</span>
+                                    </div>
+                                    <button type="button" class="btn-ref-remove" onclick="clearVideoReferenceImage()" title="Remove reference image">✕</button>
+                                </div>
+                            </div>
+
+                            <!-- Direct URL input -->
+                            <div class="ref-url-row">
+                                <input type="url" id="vid-ref-url" class="control-input ref-url-input" placeholder="Or paste direct image URL (https://...)">
                             </div>
                         </div>
 

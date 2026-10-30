@@ -4,7 +4,7 @@ echo ==================================================
 echo [VibeStudio AI Launcher]
 echo ==================================================
 echo.
-echo Starting local Node.js proxy server on port 3000...
+echo Starting local Node.js proxy server on port 3030...
 echo.
 
 :: Start server in background within the same console window
@@ -15,7 +15,7 @@ timeout /t 2 /nobreak > nul
 
 echo.
 echo Opening VibeStudio AI in your default browser...
-start http://localhost:3000
+start http://localhost:3030
 echo.
 echo --------------------------------------------------
 echo To stop the server, just close this console window.

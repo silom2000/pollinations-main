@@ -29,7 +29,7 @@ if (!apiKey) {
 
 console.log('🔑 Loaded API key:', apiKey ? `${apiKey.slice(0, 5)}...${apiKey.slice(-4)}` : '❌ Missing');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3030;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // Helper function to determine MIME type
@@ -73,7 +73,9 @@ const server = http.createServer(async (req, res) => {
   // 1. Get list of text models
   if (pathname === '/api/models' && req.method === 'GET') {
     try {
-      const apiRes = await fetch('https://gen.pollinations.ai/models');
+      const headers = {};
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+      const apiRes = await fetch('https://gen.pollinations.ai/models', { headers });
       if (!apiRes.ok) throw new Error(`HTTP ${apiRes.status}`);
       const data = await apiRes.json();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -88,7 +90,9 @@ const server = http.createServer(async (req, res) => {
   // 2. Get list of models for images and video
   if (pathname === '/api/image-models' && req.method === 'GET') {
     try {
-      const apiRes = await fetch('https://gen.pollinations.ai/image/models');
+      const headers = {};
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+      const apiRes = await fetch('https://gen.pollinations.ai/image/models', { headers });
       if (!apiRes.ok) throw new Error(`HTTP ${apiRes.status}`);
       const data = await apiRes.json();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -188,8 +192,16 @@ const server = http.createServer(async (req, res) => {
     const height = parsedUrl.searchParams.get('height') || '1024';
     const duration = parsedUrl.searchParams.get('duration') || '4';
     const seed = parsedUrl.searchParams.get('seed') || '0';
+    const image = parsedUrl.searchParams.get('image') || '';
+    const aspectRatio = parsedUrl.searchParams.get('aspectRatio') || '';
 
-    const targetUrl = `https://gen.pollinations.ai/video/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=${width}&height=${height}&duration=${duration}&seed=${seed}`;
+    let targetUrl = `https://gen.pollinations.ai/video/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=${width}&height=${height}&duration=${duration}&seed=${seed}`;
+    if (image) {
+      targetUrl += `&image=${encodeURIComponent(image)}`;
+    }
+    if (aspectRatio) {
+      targetUrl += `&aspectRatio=${encodeURIComponent(aspectRatio)}`;
+    }
     console.log(`🎥 Proxying video: ${targetUrl}`);
 
     try {
@@ -221,7 +233,9 @@ const server = http.createServer(async (req, res) => {
   // 5.5. Get list of audio models
   if (pathname === '/api/audio-models' && req.method === 'GET') {
     try {
-      const apiRes = await fetch('https://gen.pollinations.ai/audio/models');
+      const headers = {};
+      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+      const apiRes = await fetch('https://gen.pollinations.ai/audio/models', { headers });
       if (!apiRes.ok) throw new Error(`HTTP ${apiRes.status}`);
       const data = await apiRes.json();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -230,6 +244,41 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Failed to get audio models', details: err.message }));
     }
+    return;
+  }
+
+  // 5.6. Media upload for reference images (POST /api/upload)
+  if (pathname === '/api/upload' && req.method === 'POST') {
+    const chunks = [];
+    req.on('data', chunk => { chunks.push(chunk); });
+    req.on('end', async () => {
+      try {
+        const buffer = Buffer.concat(chunks);
+        const headers = {
+          'Content-Type': req.headers['content-type'] || 'application/octet-stream'
+        };
+        if (apiKey) {
+          headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+        if (req.headers['x-file-name']) {
+          headers['X-File-Name'] = req.headers['x-file-name'];
+        }
+
+        const apiRes = await fetch('https://media.pollinations.ai/upload', {
+          method: 'POST',
+          headers,
+          body: buffer
+        });
+
+        const data = await apiRes.json();
+        res.writeHead(apiRes.status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(data));
+      } catch (err) {
+        console.error('Upload error:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Upload failed', details: err.message }));
+      }
+    });
     return;
   }
 
