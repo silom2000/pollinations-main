@@ -5,8 +5,13 @@ let textModels = [];
 let imageModels = [];
 let videoModels = [];
 let audioModels = [];
+let customAiModels = [];
 let chatHistory = [];
 let activeTab = 'chat';
+
+// Provider selection: 'pollinations' or 'custom'
+let currentChatProvider = 'pollinations';
+let currentImageProvider = 'pollinations';
 
 // URL for downloading media
 let lastGeneratedImageBlobUrl = null;
@@ -158,7 +163,7 @@ function setupTextareaAutoGrow() {
 // Load statuses and model list
 async function initApp() {
     updateServerStatus(true, 'Connecting...');
-    
+
     try {
         // 1. Request key status
         const statusRes = await fetch('/api/key-status');
@@ -169,8 +174,8 @@ async function initApp() {
                 document.getElementById('key-value').style.color = '#ef4444';
             }
         }
-        
-        // 2. Get text models
+
+        // 2. Get text models (Pollinations)
         const textRes = await fetch('/api/models');
         if (textRes.ok) {
             textModels = await textRes.json();
@@ -181,7 +186,21 @@ async function initApp() {
             updateChatPrice();
         }
 
-        // 3. Get image and video models
+        // 3. Get custom AI provider models
+        const customRes = await fetch('/api/custom-models');
+        if (customRes.ok) {
+            const customData = await customRes.json();
+            customAiModels = customData.models || [];
+            if (!customData.available) {
+                // Hide custom tab if not configured
+                document.querySelectorAll('.provider-tab[data-provider="custom"]').forEach(el => {
+                    el.style.opacity = '0.4';
+                    el.title = 'Custom provider not configured in .env';
+                });
+            }
+        }
+
+        // 4. Get image and video models (Pollinations)
         const imageRes = await fetch('/api/image-models');
         if (imageRes.ok) {
             const rawImageModels = await imageRes.json();
@@ -206,7 +225,7 @@ async function initApp() {
             updateVideoRefSupport();
         }
 
-        // 4. Get audio models (TTS and music)
+        // 5. Get audio models (TTS and music)
         const audioRes = await fetch('/api/audio-models');
         if (audioRes.ok) {
             audioModels = await audioRes.json();
@@ -233,6 +252,66 @@ async function initApp() {
         console.error('Initialization error:', err);
         updateServerStatus(false, 'Connection error');
         document.getElementById('key-value').textContent = 'Error';
+    }
+}
+
+// ============================================================
+// Provider Switching
+// ============================================================
+
+function switchChatProvider(provider) {
+    currentChatProvider = provider;
+
+    // Update tab UI
+    document.querySelectorAll('#chat-provider-tabs .provider-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.provider === provider);
+    });
+
+    // Repopulate models for chosen provider
+    if (provider === 'pollinations') {
+        populateTextModels();
+    } else {
+        populateCustomChatModels();
+    }
+    updateChatPrice();
+}
+
+function populateCustomChatModels() {
+    const select = document.getElementById('chat-model-select');
+    select.innerHTML = '';
+    const models = customAiModels.length ? customAiModels : ['gemini-3.8-flash-high'];
+    models.forEach((m, i) => {
+        const option = document.createElement('option');
+        option.value = m;
+        option.textContent = `⚡ ${m}`;
+        if (i === 0) option.selected = true;
+        select.appendChild(option);
+    });
+}
+
+function switchImageProvider(provider) {
+    currentImageProvider = provider;
+
+    // Update tab UI
+    document.querySelectorAll('#img-provider-tabs .provider-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.provider === provider);
+    });
+
+    const pollinationsSettings = document.getElementById('img-pollinations-settings');
+    const customSettings = document.getElementById('img-custom-settings');
+    const sizeSettings = document.getElementById('img-size-settings');
+    const safeGroup = document.querySelector('.form-group.inline-group');
+
+    if (provider === 'custom') {
+        pollinationsSettings.classList.add('hidden');
+        sizeSettings.classList.add('hidden');
+        if (safeGroup) safeGroup.classList.add('hidden');
+        customSettings.classList.remove('hidden');
+    } else {
+        pollinationsSettings.classList.remove('hidden');
+        sizeSettings.classList.remove('hidden');
+        if (safeGroup) safeGroup.classList.remove('hidden');
+        customSettings.classList.add('hidden');
     }
 }
 
@@ -593,8 +672,11 @@ async function sendChatMessage() {
     sendButton.disabled = true;
     
     try {
+        // Route to appropriate provider
+        const endpoint = currentChatProvider === 'custom' ? '/api/custom-chat' : '/api/chat';
+
         // Send request to proxy server with streaming enabled
-        const response = await fetch('/api/chat', {
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -686,13 +768,7 @@ async function generateImage() {
         alert('Please describe the image in the prompt!');
         return;
     }
-    
-    const model = document.getElementById('img-model-select').value;
-    const seed = document.getElementById('img-seed').value;
-    const width = document.getElementById('img-width').value;
-    const height = document.getElementById('img-height').value;
-    const safe = document.getElementById('img-safe').checked;
-    
+
     // UI state: show loader
     const loader = document.getElementById('image-loader');
     const placeholder = document.getElementById('image-placeholder');
@@ -710,35 +786,75 @@ async function generateImage() {
     document.getElementById('btn-download-image').disabled = true;
 
     try {
-        const queryParams = new URLSearchParams({
-            prompt,
-            model,
-            width,
-            height,
-            seed,
-            safe: safe.toString()
-        });
+        if (currentImageProvider === 'custom') {
+            // --- Custom provider: gemini-3.1-flash-image ---
+            const size = document.getElementById('img-custom-size').value || '1024x1024';
 
-        const fetchUrl = `/api/image?${queryParams.toString()}`;
-        const response = await fetch(fetchUrl);
-        
-        if (!response.ok) {
-            let errMsg = `Error (${response.status})`;
-            try {
-                const errData = await response.json();
-                errMsg = errData.details || errData.error || errMsg;
-            } catch (e) {}
-            throw new Error(errMsg);
+            const response = await fetch('/api/custom-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, size })
+            });
+
+            if (!response.ok) {
+                let errMsg = `Error (${response.status})`;
+                try {
+                    const errData = await response.json();
+                    errMsg = errData.details || errData.error || errMsg;
+                } catch (e) {}
+                throw new Error(errMsg);
+            }
+
+            const data = await response.json();
+            const content = data.content || '';
+
+            // Extract base64 image from markdown: ![...](data:image/...;base64,...)
+            // or raw data URL
+            const dataUrlMatch = content.match(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/);
+            if (!dataUrlMatch) {
+                throw new Error('No image data received from Gemini. The model may not have generated an image for this prompt.');
+            }
+
+            if (lastGeneratedImageBlobUrl) {
+                URL.revokeObjectURL(lastGeneratedImageBlobUrl);
+            }
+            // Convert data URL → blob
+            const [meta, b64] = dataUrlMatch[0].split(',');
+            const mimeType = meta.match(/data:([^;]+)/)[1];
+            const binary = atob(b64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const blob = new Blob([bytes], { type: mimeType });
+            lastGeneratedImageBlobUrl = URL.createObjectURL(blob);
+
+        } else {
+            // --- Pollinations provider ---
+            const model = document.getElementById('img-model-select').value;
+            const seed = document.getElementById('img-seed').value;
+            const width = document.getElementById('img-width').value;
+            const height = document.getElementById('img-height').value;
+            const safe = document.getElementById('img-safe').checked;
+
+            const queryParams = new URLSearchParams({ prompt, model, width, height, seed, safe: safe.toString() });
+            const fetchUrl = `/api/image?${queryParams.toString()}`;
+            const response = await fetch(fetchUrl);
+
+            if (!response.ok) {
+                let errMsg = `Error (${response.status})`;
+                try {
+                    const errData = await response.json();
+                    errMsg = errData.details || errData.error || errMsg;
+                } catch (e) {}
+                throw new Error(errMsg);
+            }
+
+            const blob = await response.blob();
+
+            if (lastGeneratedImageBlobUrl) {
+                URL.revokeObjectURL(lastGeneratedImageBlobUrl);
+            }
+            lastGeneratedImageBlobUrl = URL.createObjectURL(blob);
         }
-        
-        const blob = await response.blob();
-        
-        // Free old reference from memory if exists
-        if (lastGeneratedImageBlobUrl) {
-            URL.revokeObjectURL(lastGeneratedImageBlobUrl);
-        }
-        
-        lastGeneratedImageBlobUrl = URL.createObjectURL(blob);
         
         displayImg.src = lastGeneratedImageBlobUrl;
         
@@ -761,10 +877,12 @@ async function generateImage() {
 
 // Regenerate image with new seed
 function regenerateImage() {
-    const seedInput = document.getElementById('img-seed');
-    // Generate random seed from 1 to a million
-    const randomSeed = Math.floor(Math.random() * 1000000) + 1;
-    seedInput.value = randomSeed;
+    if (currentImageProvider === 'pollinations') {
+        const seedInput = document.getElementById('img-seed');
+        // Generate random seed from 1 to a million
+        const randomSeed = Math.floor(Math.random() * 1000000) + 1;
+        seedInput.value = randomSeed;
+    }
     generateImage();
 }
 

@@ -5,6 +5,9 @@ const path = require('path');
 // 1. Load API key from .env file in project root
 const envPath = path.resolve(__dirname, '..', '.env');
 let apiKey = '';
+let customAiApiKey = '';
+let customAiUrl = '';
+let customAiModels = [];
 
 if (fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, 'utf8');
@@ -15,19 +18,28 @@ if (fs.existsSync(envPath)) {
       let value = match[2] || '';
       if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
       if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
-      if (key === 'POLLINATIONS_API_KEY') {
-        apiKey = value.trim();
-      }
+      value = value.trim();
+      if (key === 'POLLINATIONS_API_KEY') apiKey = value;
+      if (key === 'CUSTOM_AI_API_KEY') customAiApiKey = value;
+      if (key === 'CUSTOM_AI_URL') customAiUrl = value;
+      if (key === 'CUSTOM_AI_MODEL') customAiModels = value.split(',').map(s => s.trim()).filter(Boolean);
     }
   });
 }
 
-// If no key in .env, try getting from environment variables
-if (!apiKey) {
-  apiKey = process.env.POLLINATIONS_API_KEY || '';
+// Fallback to environment variables
+if (!apiKey) apiKey = process.env.POLLINATIONS_API_KEY || '';
+if (!customAiApiKey) customAiApiKey = process.env.CUSTOM_AI_API_KEY || '';
+if (!customAiUrl) customAiUrl = process.env.CUSTOM_AI_URL || '';
+if (!customAiModels.length && process.env.CUSTOM_AI_MODEL) {
+  customAiModels = process.env.CUSTOM_AI_MODEL.split(',').map(s => s.trim()).filter(Boolean);
 }
 
+// Derive base URL (strip /chat/completions if present)
+const customAiBaseUrl = customAiUrl.replace(/\/chat\/completions\/?$/, '');
+
 console.log('🔑 Loaded API key:', apiKey ? `${apiKey.slice(0, 5)}...${apiKey.slice(-4)}` : '❌ Missing');
+console.log('🤖 Custom AI provider:', customAiBaseUrl || '❌ Not configured', '| Models:', customAiModels.join(', ') || 'none');
 
 const PORT = process.env.PORT || 3030;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -254,6 +266,104 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Failed to get audio models', details: err.message }));
     }
+    return;
+  }
+
+  // 5.7. Custom AI provider — list of models (GET /api/custom-models)
+  if (pathname === '/api/custom-models' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      models: customAiModels,
+      available: Boolean(customAiBaseUrl && customAiApiKey)
+    }));
+    return;
+  }
+
+  // 5.8. Custom AI provider — text chat (POST /api/custom-chat)
+  if (pathname === '/api/custom-chat' && req.method === 'POST') {
+    if (!customAiBaseUrl || !customAiApiKey) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Custom AI provider not configured' }));
+      return;
+    }
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const bodyData = JSON.parse(bodyStr);
+        const apiRes = await fetch(`${customAiBaseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${customAiApiKey}`
+          },
+          body: JSON.stringify(bodyData)
+        });
+        res.writeHead(apiRes.status, {
+          'Content-Type': apiRes.headers.get('content-type') || 'application/json',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        });
+        for await (const chunk of apiRes.body) {
+          res.write(chunk);
+        }
+        res.end();
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Custom AI chat error', details: err.message }));
+      }
+    });
+    return;
+  }
+
+  // 5.9. Custom AI provider — image generation via gemini-3.1-flash-image (POST /api/custom-image)
+  // Uses /v1/chat/completions, returns base64 image embedded in message content
+  if (pathname === '/api/custom-image' && req.method === 'POST') {
+    if (!customAiBaseUrl || !customAiApiKey) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Custom AI provider not configured' }));
+      return;
+    }
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        const { prompt, size } = JSON.parse(bodyStr);
+        const requestBody = {
+          model: 'gemini-3.1-flash-image',
+          messages: [{ role: 'user', content: prompt || 'Generate an image' }],
+          extra_body: {}
+        };
+        if (size) requestBody.extra_body.size = size;
+
+        console.log(`🖼️  Custom image via gemini-3.1-flash-image, size=${size || '1024x1024'}`);
+        const apiRes = await fetch(`${customAiBaseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${customAiApiKey}`
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!apiRes.ok) {
+          const errText = await apiRes.text();
+          console.error('Custom image error:', errText);
+          res.writeHead(apiRes.status, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(errText);
+          return;
+        }
+
+        const data = await apiRes.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ content }));
+      } catch (err) {
+        console.error(err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Custom image error', details: err.message }));
+      }
+    });
     return;
   }
 
