@@ -352,10 +352,11 @@ const server = http.createServer(async (req, res) => {
 
         const requestBody = {
           model: 'gemini-3.1-flash-image',
-          messages: [{ role: 'user', content: messageContent }],
-          extra_body: {}
+          messages: [{ role: 'user', content: messageContent }]
         };
-        if (size) requestBody.extra_body.size = size;
+        // 'size' goes at the TOP LEVEL — the OpenAI Python SDK's extra_body
+        // merges fields into the root request body, so we must do the same manually.
+        if (size) requestBody.size = size;
 
         const apiRes = await fetch(`${customAiBaseUrl}/chat/completions`, {
           method: 'POST',
