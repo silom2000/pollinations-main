@@ -251,6 +251,9 @@ async function initApp() {
         // Check models readiness across all categories
         checkModelsReadiness();
 
+        // Restore previous chat session from localStorage
+        loadChatHistory();
+
         updateServerStatus(true, 'Proxy server active');
     } catch (err) {
         console.error('Initialization error:', err);
@@ -703,6 +706,7 @@ function switchTab(tabId) {
 // Clear chat
 function clearChat() {
     chatHistory = [];
+    clearChatStorage();
     const container = document.getElementById('chat-messages');
     container.innerHTML = `
         <div class="message system-message">
@@ -711,6 +715,104 @@ function clearChat() {
             </div>
         </div>
     `;
+}
+
+// ============================================================
+// Persistent Chat History (localStorage)
+// ============================================================
+
+const CHAT_STORAGE_KEY = 'vibestudio_chat_v1';
+const CHAT_MAX_MESSAGES = 200; // keep last N messages to avoid overflow
+
+function saveChatHistory() {
+    try {
+        const payload = {
+            history: chatHistory.slice(-CHAT_MAX_MESSAGES),
+            provider: currentChatProvider,
+            model: document.getElementById('chat-model-select')?.value || '',
+            savedAt: Date.now()
+        };
+        localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(payload));
+    } catch (e) {
+        // localStorage might be full or unavailable — fail silently
+        console.warn('Could not save chat history:', e);
+    }
+}
+
+function clearChatStorage() {
+    try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch (e) {}
+}
+
+function loadChatHistory() {
+    try {
+        const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+        if (!raw) return;
+
+        const { history, provider, model, savedAt } = JSON.parse(raw);
+        if (!Array.isArray(history) || history.length === 0) return;
+
+        chatHistory = history;
+
+        // Restore provider selection
+        if (provider && (provider === 'pollinations' || provider === 'custom')) {
+            currentChatProvider = provider;
+            document.querySelectorAll('#chat-provider-tabs .provider-tab').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.provider === provider);
+            });
+            if (provider === 'custom') {
+                populateCustomChatModels();
+            }
+        }
+
+        // Try to restore model selection after models are loaded
+        if (model) {
+            const select = document.getElementById('chat-model-select');
+            const trySetModel = () => {
+                if (select && [...select.options].some(o => o.value === model)) {
+                    select.value = model;
+                }
+            };
+            setTimeout(trySetModel, 1200); // wait for model list to populate
+        }
+
+        // Render restored messages in the UI
+        const container = document.getElementById('chat-messages');
+        container.innerHTML = ''; // clear the welcome message
+
+        const ageMs = Date.now() - (savedAt || 0);
+        const ageLabel = ageMs < 3600000
+            ? `${Math.round(ageMs / 60000)} min ago`
+            : ageMs < 86400000
+                ? `${Math.round(ageMs / 3600000)} h ago`
+                : `${Math.round(ageMs / 86400000)} d ago`;
+
+        // Restored session banner
+        const bannerEl = document.createElement('div');
+        bannerEl.className = 'message system-message';
+        bannerEl.innerHTML = `<div class="message-content"><p>🕘 Session restored — ${history.length} messages from ${ageLabel}</p></div>`;
+        container.appendChild(bannerEl);
+
+        // Render each message without animation (add class to skip)
+        history.forEach(msg => {
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${msg.role}-message no-anim`;
+            const contentEl = document.createElement('div');
+            contentEl.className = 'message-content';
+            if (msg.role === 'user') {
+                contentEl.textContent = msg.content;
+            } else {
+                contentEl.innerHTML = formatMarkdown(msg.content);
+            }
+            messageEl.appendChild(contentEl);
+            container.appendChild(messageEl);
+        });
+
+        // Scroll to bottom
+        container.scrollTop = container.scrollHeight;
+
+    } catch (e) {
+        console.warn('Could not restore chat history:', e);
+    }
 }
 
 // Markup formatting (micro markdown parser for code)
@@ -747,8 +849,9 @@ async function sendChatMessage() {
     input.value = '';
     input.style.height = 'auto'; // Reset height
     
-    // Add to history
+    // Add to history and save
     chatHistory.push({ role: 'user', content: prompt });
+    saveChatHistory();
     
     // Create empty container for bot response
     const assistantMessageEl = appendMessage('assistant', '<div class="spinner" style="width:20px;height:20px;display:inline-block;vertical-align:middle;margin-right:8px;"></div> Thinking...');
@@ -814,6 +917,7 @@ async function sendChatMessage() {
         
         // Save final response to dialog history
         chatHistory.push({ role: 'assistant', content: assistantReply });
+        saveChatHistory();
         
     } catch (err) {
         console.error('Chat error:', err);

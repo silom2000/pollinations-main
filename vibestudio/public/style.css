@@ -1103,3 +1103,6 @@ label {
 }
 
 .voice-meta-badge strong { color: var(--text-primary); font-weight: 600; }
+
+/* Restored messages skip entrance animation */
+.message.no-anim { animation: none; }
