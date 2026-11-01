@@ -162,6 +162,35 @@
                                 <option value="640x1536">640×1536 — Ultra Tall (9:21)</option>
                             </select>
                             <div class="provider-badge" style="margin-top:6px;">⚡ gemini-3.1-flash-image via Antigravity</div>
+
+                            <!-- Reference image for Gemini I2I -->
+                            <div style="margin-top: 14px;">
+                                <div class="ref-header">
+                                    <label>Reference Image (Image-to-Image)</label>
+                                    <span class="ref-support-badge" id="img-custom-ref-badge">✨ I2I Supported</span>
+                                </div>
+                                <div class="ref-dropzone" id="img-custom-ref-dropzone">
+                                    <input type="file" id="img-custom-ref-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none;">
+
+                                    <div class="ref-dropzone-prompt" id="img-custom-ref-prompt">
+                                        <div class="ref-icon">🖼️</div>
+                                        <div class="ref-text">
+                                            <button type="button" class="ref-browse-btn" onclick="document.getElementById('img-custom-ref-file').click()">Choose Image</button>
+                                            <span class="ref-or">or drag &amp; drop</span>
+                                        </div>
+                                        <span class="ref-hint">Paste a reference and Gemini will edit/style it</span>
+                                    </div>
+
+                                    <div class="ref-preview-box hidden" id="img-custom-ref-preview-box">
+                                        <img id="img-custom-ref-preview-img" src="" alt="Reference">
+                                        <div class="ref-meta">
+                                            <span class="ref-filename" id="img-custom-ref-filename">reference.png</span>
+                                            <span class="ref-status-tag">Ready for I2I</span>
+                                        </div>
+                                        <button type="button" class="btn-ref-remove" onclick="clearCustomImageRef()" title="Remove">✕</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="form-row" id="img-size-settings">

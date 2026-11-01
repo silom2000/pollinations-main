@@ -23,11 +23,15 @@ let lastGeneratedAudioType = 'audio/mpeg';
 let videoRefFile = null;
 let videoRefUrl = '';
 
+// Reference image state for Custom Image (Antigravity I2I)
+let customImageRefFile = null;
+
 // Initialization on load
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
     setupTextareaAutoGrow();
     setupVideoRefHandlers();
+    setupCustomImageRefHandlers();
     setupVoiceHandlers();
 });
 
@@ -447,6 +451,88 @@ function clearVideoReferenceImage() {
     if (previewImg) previewImg.src = '';
 }
 
+// ============================================================
+// Custom Image Reference (Antigravity I2I)
+// ============================================================
+
+function setupCustomImageRefHandlers() {
+    const fileInput = document.getElementById('img-custom-ref-file');
+    const dropzone = document.getElementById('img-custom-ref-dropzone');
+
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                handleCustomImageRefFile(e.target.files[0]);
+            }
+        });
+    }
+
+    if (dropzone) {
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('dragover');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                handleCustomImageRefFile(file);
+            }
+        });
+    }
+}
+
+function handleCustomImageRefFile(file) {
+    customImageRefFile = file;
+
+    const promptView = document.getElementById('img-custom-ref-prompt');
+    const previewBox = document.getElementById('img-custom-ref-preview-box');
+    const previewImg = document.getElementById('img-custom-ref-preview-img');
+    const filename  = document.getElementById('img-custom-ref-filename');
+
+    if (filename) filename.textContent = file.name.length > 28 ? file.name.slice(0, 25) + '…' : file.name;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        if (previewImg) previewImg.src = e.target.result;
+        if (promptView) promptView.classList.add('hidden');
+        if (previewBox) previewBox.classList.remove('hidden');
+    };
+    reader.readAsDataURL(file);
+}
+
+function clearCustomImageRef() {
+    customImageRefFile = null;
+    const fileInput = document.getElementById('img-custom-ref-file');
+    const promptView = document.getElementById('img-custom-ref-prompt');
+    const previewBox = document.getElementById('img-custom-ref-preview-box');
+    const previewImg = document.getElementById('img-custom-ref-preview-img');
+
+    if (fileInput) fileInput.value = '';
+    if (promptView) promptView.classList.remove('hidden');
+    if (previewBox) previewBox.classList.add('hidden');
+    if (previewImg) previewImg.src = '';
+}
+
+// Read a File object as base64 string (returns { base64, mime })
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            // result is "data:image/jpeg;base64,XXXXXX"
+            const [header, base64] = reader.result.split(',');
+            const mime = header.match(/data:([^;]+)/)[1];
+            resolve({ base64, mime });
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
 // Functions to update pricing & health info
 
 function updateChatPrice() {
@@ -790,10 +876,26 @@ async function generateImage() {
             // --- Custom provider: gemini-3.1-flash-image ---
             const size = document.getElementById('img-custom-size').value || '1024x1024';
 
+            // Encode reference image to base64 if provided
+            let referenceImageBase64 = null;
+            let referenceImageMime = null;
+            if (customImageRefFile) {
+                const loaderText = document.getElementById('image-loader-text');
+                if (loaderText) loaderText.textContent = 'Encoding reference image…';
+                try {
+                    const encoded = await fileToBase64(customImageRefFile);
+                    referenceImageBase64 = encoded.base64;
+                    referenceImageMime   = encoded.mime;
+                    if (loaderText) loaderText.textContent = 'Sending to Gemini Flash Image…';
+                } catch (e) {
+                    console.warn('Failed to encode reference image:', e);
+                }
+            }
+
             const response = await fetch('/api/custom-image', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, size })
+                body: JSON.stringify({ prompt, size, referenceImageBase64, referenceImageMime })
             });
 
             if (!response.ok) {

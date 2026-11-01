@@ -317,7 +317,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 5.9. Custom AI provider — image generation via gemini-3.1-flash-image (POST /api/custom-image)
-  // Uses /v1/chat/completions, returns base64 image embedded in message content
+  // Uses /v1/chat/completions with optional reference image (multimodal input)
   if (pathname === '/api/custom-image' && req.method === 'POST') {
     if (!customAiBaseUrl || !customAiApiKey) {
       res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -328,15 +328,35 @@ const server = http.createServer(async (req, res) => {
     req.on('data', chunk => { bodyStr += chunk; });
     req.on('end', async () => {
       try {
-        const { prompt, size } = JSON.parse(bodyStr);
+        const { prompt, size, referenceImageBase64, referenceImageMime } = JSON.parse(bodyStr);
+
+        // Build message content: multimodal if reference image provided
+        let messageContent;
+        if (referenceImageBase64) {
+          const mimeType = referenceImageMime || 'image/jpeg';
+          messageContent = [
+            {
+              type: 'image_url',
+              image_url: { url: `data:${mimeType};base64,${referenceImageBase64}` }
+            },
+            {
+              type: 'text',
+              text: prompt || 'Edit or transform this image'
+            }
+          ];
+          console.log(`🖼️  Custom image (I2I) via gemini-3.1-flash-image, size=${size || '1024x1024'}, ref=${mimeType}`);
+        } else {
+          messageContent = prompt || 'Generate an image';
+          console.log(`🖼️  Custom image (T2I) via gemini-3.1-flash-image, size=${size || '1024x1024'}`);
+        }
+
         const requestBody = {
           model: 'gemini-3.1-flash-image',
-          messages: [{ role: 'user', content: prompt || 'Generate an image' }],
+          messages: [{ role: 'user', content: messageContent }],
           extra_body: {}
         };
         if (size) requestBody.extra_body.size = size;
 
-        console.log(`🖼️  Custom image via gemini-3.1-flash-image, size=${size || '1024x1024'}`);
         const apiRes = await fetch(`${customAiBaseUrl}/chat/completions`, {
           method: 'POST',
           headers: {
